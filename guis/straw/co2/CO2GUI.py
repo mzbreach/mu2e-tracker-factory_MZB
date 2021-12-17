@@ -81,16 +81,16 @@ class CO2EndpieceGUI(QMainWindow):
             self.ui.portal3,
             self.ui.portal4,
         ]
-        self.ui.start.clicked.connect(self.initialData)
+        self.ui.start.clicked.connect(self.start)
         self.ui.finishInsertion.clicked.connect(self.finish_insertion)
         self.ui.finish.clicked.connect(self.finish)
         self.ui.viewButton.clicked.connect(self.editPallet)
 
         self.LockGUI.connect(self.lockGUI)
 
-        self.ui.palletNumInput.returnPressed.connect(self.scan)
-        self.ui.epoxyBatchInput.returnPressed.connect(self.scan)
-        self.ui.DP190BatchInput.returnPressed.connect(self.scan)
+        self.ui.palletNumInput.returnPressed.connect(self.preverify)
+        self.ui.epoxyBatchInput.returnPressed.connect(self.preverify)
+        self.ui.DP190BatchInput.returnPressed.connect(self.preverify)
 
         self.setTabOrder(self.ui.palletNumInput, self.ui.epoxyBatchInput)
         self.setTabOrder(self.ui.epoxyBatchInput, self.ui.DP190BatchInput)
@@ -223,10 +223,10 @@ class CO2EndpieceGUI(QMainWindow):
 
     ############################################################################
     # Start Button
-    # Verify inputs (cpal, epoxy batch, dp190 batch)
+    # Verify inputs (cpal, epoxy batch, dp190 batch), save them in the DB
     # Start the timer
     ############################################################################
-    def initialData(self):
+    def start(self):
         valid = [bool() for i in range(4)]
 
         # Get inputs
@@ -280,12 +280,145 @@ class CO2EndpieceGUI(QMainWindow):
         # If we get here, the pallet is going to be empty...after this.
         # I'm going to have to come back to this one.
         except AssertionError:
+            # TODO prompt user to decide whether they want to continue
             CuttingPallet.remove_straws_from_pallet_by_id(int(self.getPalletID()[-2:]))
             self.DP.saveStart()
 
+        # TODO check whether procedure isNew and ask user if they still want to procede.
+
         self.DP.procedure.setEpoxyBatch(self.epoxyBatch[-9:].replace(".", ""))
         self.DP.procedure.setDP190(self.DP190Batch[-3:])
-        # self.DP.procedure.setEpoxyTime(duration)
+
+    ############################################################################
+    # Finish insertion button
+    # Stop timer, enable finish button
+    ############################################################################
+    def finish_insertion(self):
+        self.timing = False
+        self.stopTimer()
+        self.ui.finishInsertion.setDisabled(True)
+        self.ui.finish.setEnabled(True)
+
+    ############################################################################
+    # Edit pallet button
+    ############################################################################
+    def editPallet(self):
+        rem = removeStraw(self.sessionWorkers)
+        rem.palletDirectory = self.palletDirectory
+        CPAL, lastTask, straws, passfail, CPALID = rem.getPallet(self.palletNum)
+        rem.displayPallet(CPAL, lastTask, straws, passfail)
+        rem.exec_()
+
+    ############################################################################
+    # Finish button
+    # Mark procedure as finished in DB, save data to spreadsheet, save duration
+    # to db, reset gui
+    ############################################################################
+    def finish(self):
+        self.DP.saveFinish()
+        self.saveData()
+        self.resetGUI()
+
+    ############################################################################
+    # Save data (called by finish)
+    ############################################################################
+    def saveData(self):
+        self.savePalletDataToText()
+        self.saveProcessDataToText()
+        process_duration = (
+            self.ui.hour_disp.intValue() * 3600
+            + self.ui.min_disp.intValue() * 60
+            + self.ui.sec_disp.intValue()
+        )
+        self.DP.procedure.setEpoxyTime(process_duration)
+
+    def savePalletDataToText(self):
+        pfile = self.palletDirectory / self.palletID / str(self.palletNum + ".csv")
+        if pfile.is_file():
+            with open(pfile, "r") as palletFile:
+                dummy = csv.reader(palletFile)
+                pallet = []
+                for line in dummy:
+                    pallet.append(line)
+                for row in range(len(pallet)):
+                    if row == len(pallet) - 1:
+                        for entry in range(len(pallet[row])):
+                            if entry > 1 and entry < 50:
+                                if entry % 2 == 0:
+                                    self.straws.append(pallet[row][entry])
+
+            with open(pfile, "a") as palletWrite:
+                palletWrite.write("\n")
+                palletWrite.write(datetime.now().strftime("%Y-%m-%d_%H:%M") + ",")
+                palletWrite.write(self.stationID + ",")
+                for straw in self.straws:
+                    palletWrite.write(straw)
+                    palletWrite.write(",")
+                    if straw != "":
+                        palletWrite.write("P")
+                    palletWrite.write(",")
+                i = 0
+                for worker in self.sessionWorkers:
+                    palletWrite.write(worker.lower())
+                    if i != len(self.sessionWorkers) - 1:
+                        palletWrite.write(",")
+                    i = i + 1
+
+    def saveProcessDataToText(self):
+        efile = self.epoxyDirectory / str(self.palletNum + ".csv")
+        with open(efile, "w+") as ef:
+            header = "Timestamp, Pallet ID, Epoxy Batch #, DP190 Batch #, CO2 endpiece insertion time (H:M:S), workers ***NEWLINE: Comments (optional)***\n"
+            ef.write(header)
+            ef.write(datetime.now().strftime("%Y-%m-%d_%H:%M") + ",")
+            ef.write(
+                self.palletID + "," + self.epoxyBatch + "," + self.DP190Batch + ","
+            )
+            ef.write(
+                str(self.ui.hour_disp.intValue())
+                + ":"
+                + str(self.ui.min_disp.intValue())
+                + ":"
+                + str(self.ui.sec_disp.intValue())
+                + ","
+            )
+            i = 0
+            for worker in self.sessionWorkers:
+                ef.write(worker)
+                if i != len(self.sessionWorkers) - 1:
+                    ef.write(",")
+                i = i + 1
+            if self.ui.commentBox.document().toPlainText() != "":
+                ef.write("\n" + self.ui.commentBox.document().toPlainText())
+
+        QMessageBox.about(self, "Save", "Data saved successfully!")
+
+    ############################################################################
+    # Reset gui (called by finish)
+    ############################################################################
+    def resetGUI(self):
+        self.palletID = ""
+        self.palletNum = ""
+        self.epoxyBatch = ""
+        self.DP190Batch = ""
+        self.straws = []
+        self.ui.palletNumInput.setEnabled(True)
+        self.ui.epoxyBatchInput.setEnabled(True)
+        self.ui.DP190BatchInput.setEnabled(True)
+        self.ui.palletNumInput.setText("")
+        self.ui.epoxyBatchInput.setText("")
+        self.ui.DP190BatchInput.setText("")
+        self.ui.commentBox.document().setPlainText("")
+        self.ui.start.setEnabled(True)
+        self.ui.hour_disp.display(0)
+        self.ui.min_disp.display(0)
+        self.ui.sec_disp.display(0)
+        self.ui.viewButton.setDisabled(True)
+        self.ui.finishInsertion.setDisabled(True)
+        self.ui.finish.setDisabled(True)
+        """for i in range(len(self.Current_workers)):
+            if self.Current_workers[i].text() != '':
+                self.Change_worker_ID(self.portals[i])
+        self.sessionWorkers = []"""
 
     ############################################################################
     # Verification functions
@@ -378,9 +511,7 @@ class CO2EndpieceGUI(QMainWindow):
         else:
             self.ui.DP190BatchInput.setStyleSheet("background-color:rgb(255, 0, 0)")
 
-    def scan(self):
-
-        # Get current lineEdit
+    def preverify(self):
         lineEdit = self.focusWidget()
 
         string = lineEdit.text().strip().upper()
@@ -407,108 +538,6 @@ class CO2EndpieceGUI(QMainWindow):
 
     def tab(self):
         keyboard.press(Key.tab)
-
-    def finish_insertion(self):
-        self.timing = False
-        self.stopTimer()
-        self.DP.saveFinish()
-        self.ui.finishInsertion.setDisabled(True)
-        self.ui.finish.setEnabled(True)
-
-    def saveData(self):
-        pfile = self.palletDirectory / self.palletID / str(self.palletNum + ".csv")
-        if pfile.is_file():
-            with open(pfile, "r") as palletFile:
-                dummy = csv.reader(palletFile)
-                pallet = []
-                for line in dummy:
-                    pallet.append(line)
-                for row in range(len(pallet)):
-                    if row == len(pallet) - 1:
-                        for entry in range(len(pallet[row])):
-                            if entry > 1 and entry < 50:
-                                if entry % 2 == 0:
-                                    self.straws.append(pallet[row][entry])
-
-            with open(pfile, "a") as palletWrite:
-                palletWrite.write("\n")
-                palletWrite.write(datetime.now().strftime("%Y-%m-%d_%H:%M") + ",")
-                palletWrite.write(self.stationID + ",")
-                for straw in self.straws:
-                    palletWrite.write(straw)
-                    palletWrite.write(",")
-                    if straw != "":
-                        palletWrite.write("P")
-                    palletWrite.write(",")
-                i = 0
-                for worker in self.sessionWorkers:
-                    palletWrite.write(worker.lower())
-                    if i != len(self.sessionWorkers) - 1:
-                        palletWrite.write(",")
-                    i = i + 1
-
-        efile = self.epoxyDirectory / str(self.palletNum + ".csv")
-        with open(efile, "w+") as ef:
-            header = "Timestamp, Pallet ID, Epoxy Batch #, DP190 Batch #, CO2 endpiece insertion time (H:M:S), workers ***NEWLINE: Comments (optional)***\n"
-            ef.write(header)
-            ef.write(datetime.now().strftime("%Y-%m-%d_%H:%M") + ",")
-            ef.write(
-                self.palletID + "," + self.epoxyBatch + "," + self.DP190Batch + ","
-            )
-            ef.write(
-                str(self.ui.hour_disp.intValue())
-                + ":"
-                + str(self.ui.min_disp.intValue())
-                + ":"
-                + str(self.ui.sec_disp.intValue())
-                + ","
-            )
-            i = 0
-            for worker in self.sessionWorkers:
-                ef.write(worker)
-                if i != len(self.sessionWorkers) - 1:
-                    ef.write(",")
-                i = i + 1
-            if self.ui.commentBox.document().toPlainText() != "":
-                ef.write("\n" + self.ui.commentBox.document().toPlainText())
-
-        QMessageBox.about(self, "Save", "Data saved successfully!")
-
-    def resetGUI(self):
-        self.palletID = ""
-        self.palletNum = ""
-        self.epoxyBatch = ""
-        self.DP190Batch = ""
-        self.straws = []
-        self.ui.palletNumInput.setEnabled(True)
-        self.ui.epoxyBatchInput.setEnabled(True)
-        self.ui.DP190BatchInput.setEnabled(True)
-        self.ui.palletNumInput.setText("")
-        self.ui.epoxyBatchInput.setText("")
-        self.ui.DP190BatchInput.setText("")
-        self.ui.commentBox.document().setPlainText("")
-        self.ui.start.setEnabled(True)
-        self.ui.hour_disp.display(0)
-        self.ui.min_disp.display(0)
-        self.ui.sec_disp.display(0)
-        self.ui.viewButton.setDisabled(True)
-        self.ui.finishInsertion.setDisabled(True)
-        self.ui.finish.setDisabled(True)
-        """for i in range(len(self.Current_workers)):
-            if self.Current_workers[i].text() != '':
-                self.Change_worker_ID(self.portals[i])
-        self.sessionWorkers = []"""
-
-    def editPallet(self):
-        rem = removeStraw(self.sessionWorkers)
-        rem.palletDirectory = self.palletDirectory
-        CPAL, lastTask, straws, passfail, CPALID = rem.getPallet(self.palletNum)
-        rem.displayPallet(CPAL, lastTask, straws, passfail)
-        rem.exec_()
-
-    def finish(self):
-        self.saveData()
-        self.resetGUI()
 
     def closeEvent(self, event):
         event.accept()

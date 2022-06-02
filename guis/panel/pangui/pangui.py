@@ -5841,6 +5841,9 @@ class panelGUI(QMainWindow):
             # end current methane test, setting current to 0 in db
             MethaneTestSession.end_methane_test(user)    
             
+            # save the methane session in txt file
+            self.DP.saveMethaneSession(False,covered_locations,sep_layer,top_low,top_high,bot_low,bot_high,gas_detector,user)
+            
             # clear fields
             self.ui.top_covers.setChecked(False)
             self.ui.top_flood.setChecked(False)

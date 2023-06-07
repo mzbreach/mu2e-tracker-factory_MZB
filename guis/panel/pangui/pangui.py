@@ -350,7 +350,7 @@ class panelGUI(QMainWindow):
         self.ui.epoxy_mixed1.clicked.connect(self.pro1part2)
         self.ui.epoxy_applied1.clicked.connect(self.pro1CheckEpoxySteps)
         self.ui.pro1PanelHeater.clicked.connect(self.panelHeaterPopup)
-        self.ui.validateStraws.clicked.connect(self.checkLPALs)
+        self.ui.validateStraws.clicked.connect(self.ensure_lpal_mergedown)
         self.ui.picone1.clicked.connect(lambda: self.diagram_popup("PAAS_A_C.png"))
         self.ui.picone2.clicked.connect(lambda: self.diagram_popup("d2_mix_epoxy.png"))
         self.ui.picone3.clicked.connect(lambda: self.diagram_popup("d1_BIRgroove.png"))
@@ -384,11 +384,9 @@ class panelGUI(QMainWindow):
             lambda: self.diagram_popup("d2_mix_epoxy.png")
         )
         self.ui.epoxy_mixed.clicked.connect(self.pro2part2)
-        self.ui.heat_start.clicked.connect(self.pro2Heating)
         self.ui.epoxy_inject2.clicked.connect(self.pro2part2_3)
         self.ui.epoxy_mixed_2.clicked.connect(self.pro2part2_2)
         self.ui.epoxy_inject1.clicked.connect(self.pro2EpoxyInjected)
-        self.ui.heat_finished.clicked.connect(self.pro2CheckTemp)
 
         ## Timers
         self.pro2TimerNum1 = [self.ui.hour_disp, self.ui.min_disp, self.ui.sec_disp]
@@ -397,25 +395,17 @@ class panelGUI(QMainWindow):
             self.ui.min_disp_2,
             self.ui.sec_disp_2,
         ]
-        self.pro2TimerNum3 = [
-            self.ui.hour_disp_3,
-            self.ui.min_disp_3,
-            self.ui.sec_disp_3,
-        ]
-        self.pro2Timers = [self.pro2TimerNum1, self.pro2TimerNum2, self.pro2TimerNum3]
+        self.pro2Timers = [self.pro2TimerNum1, self.pro2TimerNum2]
 
         # Disable Widgets
         disabled_widgets = [
             self.ui.epoxy_batch,
             self.ui.epoxy_batch_2,
-            self.ui.temp4,
-            self.ui.temp4_2,
             # self.ui.launch_straw_tensioner,
             self.ui.epoxy_inject1,
             self.ui.epoxy_inject2,
             self.ui.epoxy_mixed,
             self.ui.epoxy_mixed_2,
-            self.ui.heat_finished,
         ]
         self.setWidgetsDisabled(disabled_widgets)
 
@@ -575,6 +565,10 @@ class panelGUI(QMainWindow):
         self.ui.epoxyMixedROP.clicked.connect(self.mixEpoxyROP)
         self.ui.epoxyAppliedROP.clicked.connect(self.applyEpoxyROP)
         self.ui.epoxyCuredROP.clicked.connect(self.cureEpoxyROP)
+
+        # bind launch hv w/ corresponding function
+        self.ui.launchHVpro4.clicked.connect(self.hvMeasurementsPopup)
+        self.ui.launchHVpro4.setDisabled(True)
 
         self.pro4Timer1 = [
             self.ui.hour_disp_5,
@@ -778,7 +772,6 @@ class panelGUI(QMainWindow):
             self.ui.epoxy_batch42_2,
             self.ui.bpmirgapL,
             self.ui.bpmirgapR,
-            self.ui.heat_start,
             self.ui.launchHVpro6,
         ]
         self.setWidgetsDisabled(disabled_widgets)
@@ -799,8 +792,8 @@ class panelGUI(QMainWindow):
         self.ui.submitRingsPB.clicked.connect(self.saveData)
         self.ui.submitCoversPB.setDisabled(True)
         self.ui.submitRingsPB.setDisabled(True)
-        self.ui.submit_leak_panel.setDisabled(True)
-        self.ui.submit_leak_straw.setDisabled(True)
+        self.ui.launchHVpro8.clicked.connect(self.hvMeasurementsPopup)
+        self.ui.launchHVpro8.setDisabled(True)
         # connect checkboxes to pick one or the other, not both
         self.ui.wireCheck.toggled.connect(
             lambda: self.ui.strawCheck.setChecked(not (self.ui.wireCheck.isChecked()))
@@ -809,7 +802,7 @@ class panelGUI(QMainWindow):
             lambda: self.ui.wireCheck.setChecked(not (self.ui.strawCheck.isChecked()))
         )
         self.ui.submit_methane_session.clicked.connect(
-            lambda: self.start_stop_MethaneSession()
+            lambda: self.record_MethaneSession()
         )
         self.ui.submit_leak_straw.clicked.connect(
             lambda: self.submit_methane_leak('straw')
@@ -847,11 +840,11 @@ class panelGUI(QMainWindow):
                 lambda: self.Timer_3.emit(),
             ),  # 3
             QLCDTimer(
-                self.ui.hour_disp_3,
-                self.ui.min_disp_3,
-                self.ui.sec_disp_3,
-                lambda: self.Timer_4.emit(),
-            ),  # 4
+                self.ui.hour_disp_13,
+                self.ui.min_disp_13,
+                self.ui.sec_disp_13,
+                lambda: self.Timer_18.emit(),
+            ),   # This is just a placeholder, duplicate of timer 18
             QLCDTimer(
                 self.ui.hour_disp_13,
                 self.ui.min_disp_13,
@@ -1115,10 +1108,6 @@ class panelGUI(QMainWindow):
         self.ui.mrInput1.setValidator(valid_mr)
         self.ui.mrInput2.setValidator(valid_mr)
 
-        valid_temp = QDoubleValidator(bottom=50.0, top=99.9, decimals=1)
-        self.ui.temp4.setValidator(valid_temp)
-        self.ui.temp4_2.setValidator(valid_temp)
-
         set_validator(self.ui.wireInput, "(WIRE\.)\d{6}")
 
         valid_weight = QDoubleValidator(bottom=0.01, top=99.99, decimals=2)
@@ -1152,7 +1141,7 @@ class panelGUI(QMainWindow):
             self.ui.startButton7,
             self.ui.startButton_8,
         ]
-
+    
         # without the loop it would look like self.ui.startButton1.clicked.connect(self.pro1part1)
         for btn in self.startButtons:
             btn.clicked.connect(
@@ -1205,9 +1194,6 @@ class panelGUI(QMainWindow):
                 self.ui.epoxy_inject1,
                 self.ui.epoxy_batch_2,
                 self.ui.epoxy_inject2,
-                self.ui.temp4,
-                self.ui.temp4_2,
-                self.ui.heat_finished,
                 self.ui.paasBInput,
             ],
             # pro 3 Widgets
@@ -1313,7 +1299,7 @@ class panelGUI(QMainWindow):
 
         # clear mold release
         self.finishButton.clicked.connect(
-            lambda: self.suppliesList.clearMoldRelease(self.ui.submit_methane_session.text())
+            lambda: self.suppliesList.clearMoldRelease()
         )
 
         # stop vestigal timer that creates many bugs if we get rid of it
@@ -1673,10 +1659,6 @@ class panelGUI(QMainWindow):
     """
 
     def stopRunning(self, pause=False):
-        # return if currently in a methane testing session
-        if self.ui.submit_methane_session.text() != 'Start Testing Session':
-            return
-        
         # Pause GUI
         if pause:
             self.saveData()
@@ -2805,12 +2787,12 @@ class panelGUI(QMainWindow):
             self.timers[3]
         )  # Upper Epoxy Time
         self.data[self.pro_index][5] = (
-            float(self.ui.temp4.text()) if self.ui.temp4.text() else None
+            None
         )  # PAAS-A Max Temp
         self.data[self.pro_index][6] = (
-            float(self.ui.temp4_2.text()) if self.ui.temp4_2.text() else None
+            None
         )  # PAAS-B Max Temp
-        self.data[self.pro_index][7] = self.timerTuple(self.timers[4])  # Heat Time
+        self.data[self.pro_index][7] = None
         self.data[self.pro_index][8] = self.ui.paasBInput.text()  # paas B input
 
     def updateDataProcess3(self):
@@ -2946,6 +2928,7 @@ class panelGUI(QMainWindow):
         ## Try to load all previous data
         try:
             (data, elapsed_time, steps_completed) = self.DP.loadData()
+            logger.info('Loaded Panel ' + str(self.getCurrentPanel()))
         except Exception as e:
             c = sys.exc_info()[0]
             t = traceback.format_exc()
@@ -3446,50 +3429,6 @@ class panelGUI(QMainWindow):
                 self.ui.epoxy_inject2.setDisabled(
                     True
                 )  # disable upper epoxy inject button (timer must have been stopped)
-                self.ui.heat_start.setEnabled(
-                    True
-                )  # enable heat start button (epoxy stuff has been finished)
-
-        # heat stuff -----------------------------------------------------------------------------
-        if data[5] is not None:  # if paas A max temp num data exists
-            self.ui.temp4.setText(
-                str(data[5])
-            )  # set text of paas A max temp line edit widget to num
-        if data[6] is not None:  # if paas B max temp num data exists
-            self.ui.temp4_2.setText(
-                str(data[6])
-            )  # set text of paas B max temp line edit widget to num
-
-        if data[7] is not None:  # if heat timer data exists (if timer has been started)
-            self.ui.heat_start.setDisabled(True)  # disable heat start button
-
-            elapsed_time, running = data[
-                7
-            ]  # extract timer tuple data [<timedeltaObj>, <isRunningBool>]
-            self.timers[4].setElapsedTime(
-                elapsed_time
-            )  # set time on corresponding timer
-            if running:  # if loaded data indicates the timer should be running
-                self.startTimer(4)  # start the timer
-                self.ui.heat_finished.setEnabled(
-                    True
-                )  # enable heat finish button (button that stops the timer)
-                self.ui.temp4.setEnabled(
-                    True
-                )  # enable paas A max temp line edit widget
-                self.ui.temp4_2.setEnabled(
-                    True
-                )  # enable paas B max temp line edit widget
-            else:  # loaded data indicates the timer should NOT be running
-                self.ui.heat_finished.setDisabled(
-                    True
-                )  # disable heat finished button (timer must've been stopped)
-                self.ui.temp4.setDisabled(
-                    True
-                )  # disable paas A max temp line edit widget
-                self.ui.temp4_2.setDisabled(
-                    True
-                )  # disable paas B max temp line edit widget
 
         # PAAS B Entry ---------------------------------------------------------------------------
         if data[8] is not None:
@@ -3573,6 +3512,8 @@ class panelGUI(QMainWindow):
         if data[0] is not None:  # if panel input data exists
             self.ui.panelInput4.setText(data[0])  # set it's text to data[0]
             self.ui.panelInput4.setDisabled(True)  # and disable the panel input widget
+
+        self.ui.launchHVpro4.setEnabled(True)
 
         # LEFT PIN
         if data[2] is not None:  # if timer data for left pin application time exists
@@ -4050,6 +3991,7 @@ class panelGUI(QMainWindow):
         if data[0] is not None:
             self.ui.panelInput_8.setText(str(data[0]))
             self.ui.panelInput_8.setDisabled(True)
+            self.ui.launchHVpro8.setEnabled(True)
 
         # covers
         if data[1] is not None:
@@ -4289,6 +4231,23 @@ class panelGUI(QMainWindow):
             # Save straws
             self.saveData()
             return True
+    
+    # Aggressively reminds the user that a mergedown must be done.
+    def ensure_lpal_mergedown(self):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle('WARNING!')
+        box.setText('YOU MUST DO A MERGEDOWN AFTER THE LPAL LOADER IS RUN FOR THESE LPALS. \n\n HAVE YOU DONE A MERGEDOWN SINCE THE LPAL LOADER WAS RUN FOR THESE LPALS? \n\n NOT SURE? CLOSE THE GUI AND DO A MERGEDOWN BEFORE PROCEEDING.')
+        box.setStandardButtons(QMessageBox.Yes|QMessageBox.No)
+        buttonY = box.button(QMessageBox.Yes)
+        buttonY.setText('YES I HAVE DONE A MERGEDOWN SINCE THE LPAL LOADER WAS LAST RUN FOR THIS LPAL')
+        buttonN = box.button(QMessageBox.No)
+        buttonN.setText('NO I WILL TO CLOSE THE GUI NOW AND DO IT')
+        box.exec_()
+        
+        if box.clickedButton() == buttonY:
+            self.checkLPALs()
+        
 
     """
     resetpro1(self)
@@ -4489,32 +4448,6 @@ class panelGUI(QMainWindow):
 
         # (Dis/En)able widgets
         self.ui.epoxy_inject2.setDisabled(True)
-        self.ui.heat_start.setEnabled(True)
-
-        # Save data
-        self.saveData()
-
-    """
-    pro2part2_4(self)
-
-        Description: Function called by the 'Heat Finished' button. Records the maximum temperatures and heating time.
-
-        Disables: PAAS-A Max Temp Input
-                  PAAS-B Max Temp Input
-                  Heat Finished Button
-    """
-
-    def pro2part2_4(self):
-
-        # Reset stylesheets of temperature inputs
-        self.ui.temp4.setStyleSheet("")
-        self.ui.temp4_2.setStyleSheet("")
-
-        # Disable heat widgets
-        self.setWidgetsDisabled([self.ui.heat_finished, self.ui.temp4, self.ui.temp4_2])
-
-        # Focus on comment box
-        self.ui.commentBox2.setFocus()
 
         # Save data
         self.saveData()
@@ -4542,34 +4475,6 @@ class panelGUI(QMainWindow):
         self.saveData()
 
     """
-    pro2Heating(self)
-
-        Description: Function called by clicking 'Heat Start' button. Starts the pro 2 heating timer thread.
-
-        Disables: Heat Start Button
-
-        Enables: Heat Finished Button
-                 PAAS-A Max Temp Input
-                 PAAS-B Max Temp Input
-    """
-
-    def pro2Heating(self):
-        # Disable start heat button
-        self.ui.heat_start.setDisabled(True)
-
-        # Enable temperature inputs and stop heating button
-        self.setWidgetsEnabled([self.ui.heat_finished, self.ui.temp4, self.ui.temp4_2])
-        self.ui.temp4.setFocus()
-
-        # Start Timer
-        self.startTimer(4)
-
-    def pro2CheckTemp(self):
-        if self.validateInput(indices=[5, 6]):
-            self.stopTimer(4)
-            self.pro2part2_4()
-
-    """
     resetpro2(self)
 
         Description: The function to reset the pro 2 data and UI elements to the state before pro 2 was started.
@@ -4591,8 +4496,6 @@ class panelGUI(QMainWindow):
         self.ui.paasBInput.setText("")
         self.ui.epoxy_batch.setText("")
         self.ui.epoxy_batch_2.setText("")
-        self.ui.temp4.setText("")
-        self.ui.temp4_2.setText("")
         self.ui.commentBox2.document().setPlainText("")
         for timer in self.timers[2:5]:
             timer.reset()
@@ -4743,6 +4646,7 @@ class panelGUI(QMainWindow):
         self.ui.epoxyMixedLOP.setEnabled(True)
         self.ui.epoxyMixedROP.setEnabled(True)
         self.ui.commentBox2.setFocus()
+        self.ui.launchHVpro4.setEnable(True)
 
         self.startRunning()
         self.saveData()
@@ -5414,6 +5318,8 @@ class panelGUI(QMainWindow):
             wid.setToolTip("Enter all digits as '0' to mark as unknown")
             wid.editingFinished.connect(self.pro8TrySave)
 
+        self.ui.launchHVpro8.setEnabled(True)
+
         self.startRunning()
         self.saveData()
         self.ui.pro8StageLabel.setText("Current Stage: Preperation")
@@ -5761,24 +5667,15 @@ class panelGUI(QMainWindow):
         )
         
     # Calls save function for methane testing session
-    def start_stop_MethaneSession(self):
-        # save current workers
-        user=""
-        for i in self.Current_workers:
-            if i.text() is not None:
-                user=user+' '+i.text()
-        
-        # determine whether or not the plastic separator was used
-        sep_layer=self.ui.sep_layer.isChecked()
-                
-        # acquire sequence designating which areas have been covered during methane sweep
-        if self.ui.submit_methane_session.text() == 'Start Testing Session' and self.ui.panelInput_8.text() != '':
-            MethaneTestSession.end_methane_test(user)
-            self.DP.saveMethaneSession(True,None,None,None,None,None,None,None,user)
-            self.ui.submit_methane_session.setText('Submit Testing Session')
-            self.ui.submit_leak_panel.setDisabled(False)
-            self.ui.submit_leak_straw.setDisabled(False)
-        elif self.ui.panelInput_8.text() != '':
+    def record_MethaneSession(self):
+
+        if self.ui.panelInput_8.text() != '':
+            # save current worker
+            user=self.Current_workers[0].text()
+    
+            # determine whether or not the plastic separator was used
+            sep_layer=self.ui.sep_layer.isChecked()
+            
             # acquire top and bottom high and low straws
             top_low = None
             top_high = None
@@ -5834,15 +5731,13 @@ class panelGUI(QMainWindow):
                 )
                 return False
             
-            # using collected data, update the current methane test
-            MethaneTestSession.update_methane_test(covered_locations, gas_detector, top_low, top_high, bot_low, bot_high, sep_layer, user)
-            self.ui.submit_methane_session.setText('Start Testing Session')
+
             
-            # end current methane test, setting current to 0 in db
-            MethaneTestSession.end_methane_test(user)    
+            # covered_areas, sep_layer, top_straw_low, top_straw_high, bot_straw_low, bot_straw_high, detector_number, user
+            self.DP.saveMethaneSession(covered_locations, sep_layer, top_low, top_high, bot_low, bot_high, gas_detector, user)
             
-            # save the methane session in txt file
-            self.DP.saveMethaneSession(False,covered_locations,sep_layer,top_low,top_high,bot_low,bot_high,gas_detector,user)
+            # refresh the past leak display
+            self.display_methane_leaks()
             
             # clear fields
             self.ui.top_covers.setChecked(False)
@@ -5860,12 +5755,6 @@ class panelGUI(QMainWindow):
             self.ui.bs_high.clear()
             self.ui.detector.clear()
             
-            self.ui.submit_leak_panel.setDisabled(True)
-            self.ui.submit_leak_straw.setDisabled(True)
-            
-            # refresh the past leak display
-            self.display_methane_leaks()
-            
         
     # save methane leak instance
     def submit_methane_leak(self, leak_type):
@@ -5877,7 +5766,8 @@ class panelGUI(QMainWindow):
                 
                 location = int(self.ui.leak_location.text())
                 leak_size = int(self.ui.leak_size_straw.text())
-                session = int(MethaneTestSession.get_methane_session()[1])
+                
+                user=self.Current_workers[0].text()
             except:
                 generateBox(
                     "critical", "Warning", "Please ensure that all inputs are valid."
@@ -5897,7 +5787,7 @@ class panelGUI(QMainWindow):
             description = self.ui.leak_description_straw.toPlainText()
             
             # save the leak in db
-            self.DP.saveMethaneLeak(session,True,straw_number,location,straw_leak_location,description,leak_size,None)
+            self.DP.saveMethaneLeak(True,straw_number,location,straw_leak_location,description,leak_size,None,user)
 
             # clear all entry fields/checkboxes
             self.ui.straw_number.clear()
@@ -5920,7 +5810,7 @@ class panelGUI(QMainWindow):
             # acquire data from the gui entry fields
             try:
                 leak_size = int(self.ui.leak_size_panel.text())
-                session = int(MethaneTestSession.get_methane_session()[1])
+                
             except:
                 generateBox(
                     "critical", "Warning", "Please ensure that all inputs are valid."
@@ -5930,7 +5820,8 @@ class panelGUI(QMainWindow):
             description = self.ui.leak_description_panel.toPlainText()
                 
             # save the methane leak instance in db
-            self.DP.saveMethaneLeak(session,False,None,None,None,description,leak_size,covered_locations)
+            user=self.Current_workers[0].text()
+            self.DP.saveMethaneLeak(False,None,None,None,description,leak_size,covered_locations,user)
                 
             # reset all entry fields/checkboxes
             self.ui.leak_description_panel.clear()
@@ -5941,6 +5832,9 @@ class panelGUI(QMainWindow):
             self.ui.leak_pfn_holes.setChecked(False)
             self.ui.leak_e_slot.setChecked(False)
             self.ui.leak_side_seams.setChecked(False)
+        
+        # refresh the past leak display
+        self.display_methane_leaks()
 
 
 

@@ -25,14 +25,19 @@ def GetProjectPaths():
     paths = dict(np.loadtxt(paths_file, delimiter=",", dtype=str))
     # Make paths absolute. This txt file that holds the root/top dir of this
     # installation is created during setup.py.
-    root = pkg_resources.read_text(resources, "rootDirectory.txt")
+    root = GetRootPath()
 
     # paths.update((k, Path(root + "/" + v)) for k, v in paths.items())
     for k, v in paths.items():
         # if special strawroom things
         if k == "leaktestresults" or k == "pallets" or k == "network_leaktest_raw_data":
             # save directly to the network
-            paths.update({k: Path("X:/" + v)})
+            # official production mode
+            if "rds01.storage.umn.edu\cse_spa_mu2e\Data" in GetNetworkDatabasePath():
+                paths.update({k: Path("X:/" + v)})
+            # developer test mode
+            else:
+                paths.update({k: Path("X:/DeveloperTestArea/" + v)})
         else:
             # we want paths to remain on this machine
             paths.update({k: Path(root + "/" + v)})
@@ -53,3 +58,11 @@ def GetLocalDatabasePath():
 
 def GetNetworkDatabasePath():
     return pkg_resources.read_text(resources, "networkDatabasePath.txt")
+
+
+def GetNetworkDataPath():
+    return Path(GetNetworkDatabasePath()).parent
+
+
+def GetRootPath():
+    return pkg_resources.read_text(resources, "rootDirectory.txt")
